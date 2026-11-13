@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -28,12 +29,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Placeable
@@ -59,6 +63,8 @@ import kotlin.math.cos
 import kotlin.math.max
 
 private val AccelerateDecelerateEasing = Easing { fraction -> (cos((fraction + 1) * PI) / 2.0 + 0.5).toFloat() }
+
+private val LocalFastScrollerState = staticCompositionLocalOf<FastScrollerState?> { null }
 
 private enum class OverlayPart { Track, Thumb, Popup }
 
@@ -100,6 +106,7 @@ class FastScrollerState internal constructor(
     internal var geometry = ScrollbarGeometry()
     internal var touchSlop = 0f
     internal var minTouchTargetSize = 0
+    internal var excludedPointer: PointerId? = null
 
     private var showingScrollbar = true
     private var showingPopup = false
@@ -233,13 +240,21 @@ fun FastScroller(
         snapshotFlow { helper.scrollOffset }.drop(1).collect { state.onScrollChanged() }
     }
     Box(modifier.pointerInput(state) { awaitEachGesture { fastScrollGesture(state) } }) {
-        content()
+        CompositionLocalProvider(LocalFastScrollerState provides state) { this@Box.content() }
         FastScrollerOverlay(state, style, padding, Modifier.matchParentSize())
+    }
+}
+
+fun Modifier.fastScrollExclusion(): Modifier = composed {
+    val state = LocalFastScrollerState.current ?: return@composed this
+    pointerInput(state) {
+        awaitEachGesture { state.excludedPointer = awaitFirstDown(requireUnconsumed = false).id }
     }
 }
 
 private suspend fun AwaitPointerEventScope.fastScrollGesture(state: FastScrollerState) {
     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+    state.excludedPointer = null
     if (!state.geometry.enabled) return
     val pointerId = down.id
     val downX = down.position.x
@@ -265,7 +280,8 @@ private suspend fun AwaitPointerEventScope.fastScrollGesture(state: FastScroller
             }
             if (!state.geometry.enabled) return
             val y = change.position.y
-            if (!dragging && state.isInTrackTouchTarget(downX, downY) && abs(y - downY) > state.touchSlop) {
+            val excluded = state.excludedPointer == pointerId
+            if (!dragging && !excluded && state.isInTrackTouchTarget(downX, downY) && abs(y - downY) > state.touchSlop) {
                 if (state.isInThumbTouchTarget(downX, downY)) {
                     dragStartY = lastY
                     dragStartThumbOffset = state.geometry.thumbOffset
