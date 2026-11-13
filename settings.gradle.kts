@@ -32,3 +32,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "AndroidFastScroll-kt"
 include("AndroidFastScroll-kt")
+include("AndroidFastScroll-kt-compose")
+include("sample")

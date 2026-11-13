@@ -1,0 +1,6 @@
+<resources>
+    <dimen name="row_height">56dp</dimen>
+    <dimen name="row_padding">16dp</dimen>
+    <dimen name="row_text_size">16sp</dimen>
+    <integer name="item_count">200</integer>
+</resources>

@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">FastScroll Sample</string>
+    <string name="item_title">Item %1$d</string>
+</resources>

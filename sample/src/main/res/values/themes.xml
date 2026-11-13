@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.Sample" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/sample_background</item>
+    </style>
+</resources>

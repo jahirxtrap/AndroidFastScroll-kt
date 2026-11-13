@@ -114,6 +114,25 @@ class RvAdapter(
 
 - If you are using any `RecyclerView.ItemDecoration` that implements `onDrawOver()`, you might be interested in [`FixItemDecorationRecyclerView`](AndroidFastScroll-kt/src/main/java/me/stellarsand/android/fastscroll/FixItemDecorationRecyclerView.kt) which can fix the drawing order.
 
+### Jetpack Compose
+- Add the Compose module next to the main one:
+```gradle
+dependencies {
+    implementation("com.github.StellarSand.AndroidFastScroll-kt:AndroidFastScroll-kt-compose:v1.0.9")
+}
+```
+
+- Wrap a `LazyColumn` with `FastScroller` and give it a helper built from the list state. The lambda provides the popup text for an item index:
+```kotlin
+val state = rememberLazyListState()
+val helper = rememberLazyListFastScrollHelper(state) { index -> titles[index].take(1) }
+FastScroller(helper = helper) {
+    LazyColumn(state = state) { items(titles) { Text(it) } }
+}
+```
+
+- `FastScrollerDefaults.defaultStyle()` and `FastScrollerDefaults.md1Style()` mirror the two predefined styles; build a `FastScrollerStyle` (track, thumb and optional popup) for a custom look, pass `padding` to replace the list content padding, `autoHide = false` to keep the scrollbar visible, and read `FastScrollerState.isDragging` to react to a drag.
+
 - If you are using any other library that makes use of `RecyclerView.OnItemTouchListener` (e.g. `recyclerview-selection`), you might be interested in [`FixOnItemTouchListenerRecyclerView`](AndroidFastScroll-kt/src/main/java/me/stellarsand/android/fastscroll/FixOnItemTouchListenerRecyclerView.kt) which can correctly handle cancellations when dispatching touch events to listeners. You may also want to configure this library before others so that this library can take precedence in touch event handling.
 
 
