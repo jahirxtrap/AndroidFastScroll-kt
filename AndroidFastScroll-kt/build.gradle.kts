@@ -16,32 +16,34 @@
 
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.android.kotlin)
     alias(libs.plugins.maven.publish)
 }
 
 android {
     namespace = "me.stellarsand.android.fastscroll"
-    compileSdk = 35
-    
+    compileSdk = 37
+    compileSdkMinor = 2
+
     defaultConfig {
         minSdk = 23
     }
-    
+
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
-    
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    
-    kotlinOptions {
-        jvmTarget = "17"
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
     }
 }
 
@@ -50,19 +52,13 @@ dependencies {
     implementation(libs.androidx.recyclerview)
 }
 
-
-afterEvaluate {
-    android.libraryVariants.forEach { variant ->
-        publishing {
-            publications {
-                create<MavenPublication>(variant.name) {
-                    from(components.findByName(variant.name))
-                    
-                    groupId = "me.StellarSand"
-                    artifactId = "AndroidFastScroll-kt"
-                    version = "v1.0.8"
-                }
-            }
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            groupId = "me.StellarSand"
+            artifactId = "AndroidFastScroll-kt"
+            version = "v1.0.9"
+            afterEvaluate { from(components["release"]) }
         }
     }
 }
