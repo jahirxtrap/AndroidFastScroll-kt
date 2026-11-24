@@ -27,9 +27,10 @@ interface FastScrollHelper {
 fun rememberLazyListFastScrollHelper(
     state: LazyListState,
     popupText: ((index: Int) -> String?)? = null,
+    headerCount: Int = 0,
 ): FastScrollHelper {
     val provider = rememberUpdatedState(popupText)
-    return remember(state) { LazyListFastScrollHelper(state, provider) }
+    return remember(state, headerCount) { LazyListFastScrollHelper(state, provider, headerCount) }
 }
 
 @Composable
@@ -54,22 +55,31 @@ private abstract class LazyFastScrollHelper(
     protected abstract val lastIndex: Int
     protected abstract val firstOffset: Int
 
+    protected open val headerCount: Int
+        get() = 0
+
     protected abstract suspend fun scrollToItem(index: Int, offset: Int)
 
+    protected open fun headersHeight(count: Int): Int = 0
+
     private val lineCount: Int
-        get() = if (itemCount == 0) 0 else (itemCount - 1) / spanCount + 1
+        get() = if (itemCount <= headerCount) 0 else (itemCount - headerCount - 1) / spanCount + 1
 
     override val scrollRange: Int
         get() {
             val height = itemHeight
             if (height == 0 || itemCount == 0) return 0
-            return contentPaddingTop + lineCount * height - itemSpacing + contentPaddingBottom
+            return contentPaddingTop + headersHeight(headerCount) + lineCount * height - itemSpacing + contentPaddingBottom
         }
 
     override val scrollOffset: Int
         get() {
             val index = firstIndex
-            return if (index == NO_POSITION) 0 else index / spanCount * itemHeight - firstOffset
+            return when {
+                index == NO_POSITION -> 0
+                index < headerCount -> headersHeight(index) - firstOffset
+                else -> headersHeight(headerCount) + (index - headerCount) / spanCount * itemHeight - firstOffset
+            }
         }
 
     override val popupText: String?
@@ -83,8 +93,15 @@ private abstract class LazyFastScrollHelper(
         val height = itemHeight
         if (height == 0) return
         val contentOffset = offset - contentPaddingTop
-        val line = max(0, contentOffset / height)
-        scrollToItem(line * spanCount, contentOffset - line * height)
+        val headers = headersHeight(headerCount)
+        if (contentOffset < headers) {
+            var index = 0
+            while (index < headerCount - 1 && headersHeight(index + 1) <= contentOffset) index++
+            scrollToItem(index, contentOffset - headersHeight(index))
+            return
+        }
+        val line = (contentOffset - headers) / height
+        scrollToItem(headerCount + line * spanCount, contentOffset - headers - line * height)
     }
 
     private fun popupTextPosition(): Int {
@@ -100,12 +117,25 @@ private abstract class LazyFastScrollHelper(
 private class LazyListFastScrollHelper(
     private val state: LazyListState,
     popupTextProvider: State<((Int) -> String?)?>,
+    override val headerCount: Int,
 ) : LazyFastScrollHelper(popupTextProvider) {
+    private val headerSizes = IntArray(headerCount)
+
     private val info: LazyListLayoutInfo
         get() = state.layoutInfo
 
     override val itemHeight: Int
-        get() = info.visibleItemsInfo.firstOrNull()?.let { it.size + info.mainAxisItemSpacing } ?: 0
+        get() = info.visibleItemsInfo.firstOrNull { it.index >= headerCount }?.let { it.size + info.mainAxisItemSpacing } ?: 0
+
+    override fun headersHeight(count: Int): Int {
+        for (item in info.visibleItemsInfo) {
+            if (item.index >= headerCount) break
+            headerSizes[item.index] = item.size + info.mainAxisItemSpacing
+        }
+        var total = 0
+        for (index in 0 until count) total += headerSizes[index]
+        return total
+    }
 
     override val itemSpacing: Int
         get() = info.mainAxisItemSpacing
