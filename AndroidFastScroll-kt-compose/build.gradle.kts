@@ -40,7 +40,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "me.StellarSand"
             artifactId = "AndroidFastScroll-kt-compose"
-            version = "v1.0.9"
+            version = "v1.1.0"
             afterEvaluate { from(components["release"]) }
         }
     }

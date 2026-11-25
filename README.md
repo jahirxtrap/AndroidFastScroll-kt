@@ -118,7 +118,7 @@ class RvAdapter(
 - Add the Compose module next to the main one:
 ```gradle
 dependencies {
-    implementation("com.github.StellarSand.AndroidFastScroll-kt:AndroidFastScroll-kt-compose:v1.0.9")
+    implementation("com.github.jahirxtrap.AndroidFastScroll-kt:AndroidFastScroll-kt-compose:1.1.0")
 }
 ```
 
