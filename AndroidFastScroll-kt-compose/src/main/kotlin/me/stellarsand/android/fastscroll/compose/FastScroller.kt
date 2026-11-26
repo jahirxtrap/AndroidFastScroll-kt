@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -34,14 +35,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -50,6 +53,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.LayoutDirection
 import kotlinx.coroutines.CoroutineScope
@@ -106,7 +110,8 @@ class FastScrollerState internal constructor(
     internal var geometry = ScrollbarGeometry()
     internal var touchSlop = 0f
     internal var minTouchTargetSize = 0
-    internal var excludedPointer: PointerId? = null
+    internal var coordinates: LayoutCoordinates? = null
+    internal val exclusions = mutableListOf<ExclusionZone>()
 
     private var showingScrollbar = true
     private var showingPopup = false
@@ -153,6 +158,16 @@ class FastScrollerState internal constructor(
     internal fun isInThumbTouchTarget(x: Float, y: Float): Boolean = isInTouchTarget(geometry.thumb, x, y)
 
     internal fun isInTrackTouchTarget(x: Float, y: Float): Boolean = isInTouchTarget(geometry.track, x, y)
+
+    internal fun isOnThumb(x: Float, y: Float): Boolean = geometry.thumb.contains(IntOffset(x.toInt(), y.toInt()))
+
+    internal fun isExcluded(position: Offset): Boolean {
+        val own = coordinates?.takeIf { it.isAttached } ?: return false
+        return exclusions.any { zone ->
+            val area = zone.coordinates?.takeIf { it.isAttached } ?: return@any false
+            own.localBoundingBoxOf(area).contains(position)
+        }
+    }
 
     private fun cancelAutoHideScrollbar() {
         autoHideJob?.cancel()
@@ -239,31 +254,44 @@ fun FastScroller(
         state.postAutoHideScrollbar()
         snapshotFlow { helper.scrollOffset }.drop(1).collect { state.onScrollChanged() }
     }
-    Box(modifier.pointerInput(state) { awaitEachGesture { fastScrollGesture(state) } }) {
+    Box(
+        modifier
+            .onPlaced { state.coordinates = it }
+            .pointerInput(state) { awaitEachGesture { fastScrollGesture(state) } },
+    ) {
         CompositionLocalProvider(LocalFastScrollerState provides state) { this@Box.content() }
         FastScrollerOverlay(state, style, padding, Modifier.matchParentSize())
     }
 }
 
+internal class ExclusionZone {
+    var coordinates: LayoutCoordinates? = null
+}
+
+/** Area where a press belongs to its own content: only the visible thumb can be grabbed there. */
 fun Modifier.fastScrollExclusion(): Modifier = composed {
     val state = LocalFastScrollerState.current ?: return@composed this
-    pointerInput(state) {
-        awaitEachGesture { state.excludedPointer = awaitFirstDown(requireUnconsumed = false).id }
+    val zone = remember { ExclusionZone() }
+    DisposableEffect(state, zone) {
+        state.exclusions += zone
+        onDispose { state.exclusions -= zone }
     }
+    onPlaced { zone.coordinates = it }
 }
 
 private suspend fun AwaitPointerEventScope.fastScrollGesture(state: FastScrollerState) {
     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-    state.excludedPointer = null
     if (!state.geometry.enabled) return
     val pointerId = down.id
     val downX = down.position.x
     val downY = down.position.y
+    val excluded = state.isExcluded(down.position)
+    val onThumb = if (excluded) state.isOnThumb(downX, downY) else state.isInThumbTouchTarget(downX, downY)
     var lastY = downY
     var dragStartY = 0f
     var dragStartThumbOffset = 0
     var dragging = false
-    if (state.scrollbarAlpha.value > 0f && state.isInThumbTouchTarget(downX, downY)) {
+    if (state.scrollbarAlpha.value > 0f && onThumb) {
         dragStartY = downY
         dragStartThumbOffset = state.geometry.thumbOffset
         dragging = true
@@ -280,9 +308,8 @@ private suspend fun AwaitPointerEventScope.fastScrollGesture(state: FastScroller
             }
             if (!state.geometry.enabled) return
             val y = change.position.y
-            val excluded = state.excludedPointer == pointerId
             if (!dragging && !excluded && state.isInTrackTouchTarget(downX, downY) && abs(y - downY) > state.touchSlop) {
-                if (state.isInThumbTouchTarget(downX, downY)) {
+                if (onThumb) {
                     dragStartY = lastY
                     dragStartThumbOffset = state.geometry.thumbOffset
                 } else {
